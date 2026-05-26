@@ -1,27 +1,12 @@
+import { getContext } from '../../../../extensions.js';
+import { eventSource, event_types } from '../../../../script.js';
+
 /**
  * SillyTavern Chess Engine Extension
  *
  * Integrates a JS chess engine into any chat.  The user plays White (or Black)
  * by embedding moves in their messages; the engine plays the other side.
  * The board is displayed at the bottom of every AI message.
- *
- * Move input accepted inside any user message:
- *   - "D2 to D4"  (natural language)
- *   - "d2d4"      (compact coordinate)
- *   - "d2-d4"     (dash-separated coordinate)
- *   - SAN like "e4", "Nf3", "O-O" (tried as fallback via chess.js)
- *
- * Game start:
- *   - /chess new  (slash command, always works)
- *   - Configurable trigger phrase in any user message  (e.g. "let's play chess")
- *
- * Game end:
- *   - Checkmate, stalemate, draw  (automatic)
- *   - User types a resignation phrase  ("I resign", "I give up", etc.)
- *   - Character's reply contains a resignation phrase or [RESIGN] marker
- *   - /chess stop  (slash command)
- *
- * Slash commands:  /chess new | /chess flip | /chess fen | /chess board | /chess stop | /chess resign
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,11 +28,6 @@ const PIECE_NAMES = { p: 'Pawn', n: 'Knight', b: 'Bishop', r: 'Rook', q: 'Queen'
 // Resignation & trigger-phrase patterns
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Patterns that mean "the user is resigning this game."
- * Checked case-insensitively against the full user message.
- * Kept deliberately specific to avoid false positives in normal roleplay.
- */
 const USER_RESIGN_PATTERNS = [
     /\bI\s+resign\b/i,
     /\bI\s+concede\b/i,
@@ -58,11 +38,6 @@ const USER_RESIGN_PATTERNS = [
     /\byou\s+win\s*[.!]/i,
 ];
 
-/**
- * Patterns that mean "the character (AI) is resigning."
- * Applied to the character's rendered message text.
- * The [RESIGN] marker is explicitly instructed in the system note.
- */
 const CHAR_RESIGN_PATTERNS = [
     /\[RESIGN\]/i,
     /\bI\s+resign\b/i,
@@ -79,10 +54,6 @@ function containsCharResignation(text) {
     return CHAR_RESIGN_PATTERNS.some(p => p.test(text));
 }
 
-/**
- * Returns true if `text` contains the trigger phrase (case-insensitive substring).
- * Falls back to the default "let's play chess" if the setting is empty.
- */
 function matchesTriggerPhrase(text) {
     const settings = getSettings();
     if (!settings.triggerPhraseEnabled) return false;
@@ -97,14 +68,14 @@ const DEFAULT_SETTINGS = Object.freeze({
     enabled:              true,
     showBoard:            true,
     autoDetectMoves:      true,
-    aiLevel:              2,          // 1=random, 2=depth-1, 3=depth-2, 4=depth-3
-    playerColor:          'w',        // 'w'=user is White, 'b'=user is Black
+    aiLevel:              2,          
+    playerColor:          'w',        
     triggerPhraseEnabled: true,
     triggerPhrase:        "let's play chess",
 });
 
 function getSettings() {
-    const { extensionSettings } = SillyTavern.getContext();
+    const { extensionSettings } = getContext();
     if (!extensionSettings[MODULE_NAME]) {
         extensionSettings[MODULE_NAME] = structuredClone(DEFAULT_SETTINGS);
     }
@@ -120,27 +91,15 @@ function getSettings() {
 // Chat metadata (per-chat persistence)
 // ─────────────────────────────────────────────────────────────────────────────
 function getGameState() {
-    const { chatMetadata } = SillyTavern.getContext();
+    const { chatMetadata } = getContext();
     return chatMetadata?.chess_engine ?? null;
 }
 
-/**
- * Persist game state.
- *
- * @param {object} opts
- * @param {string}      opts.fen
- * @param {string[]}    opts.history           - PGN move list
- * @param {string|null} opts.lastMoveWhite      - "e2→e4"
- * @param {string|null} opts.lastMoveBlack      - "e7→e5"
- * @param {boolean}     [opts.gameOver]         - true once the game has ended
- * @param {string}      [opts.gameOverReason]   - human-readable reason string
- * @param {boolean}     [opts.narratedEnding]   - true after the LLM has narrated the conclusion
- */
 async function saveGameState({
     fen, history, lastMoveWhite, lastMoveBlack,
     gameOver = false, gameOverReason = '', narratedEnding = false,
 }) {
-    const { chatMetadata, saveMetadata } = SillyTavern.getContext();
+    const { chatMetadata, saveMetadata } = getContext();
     chatMetadata.chess_engine = {
         fen, history, lastMoveWhite, lastMoveBlack,
         gameOver, gameOverReason, narratedEnding,
@@ -149,7 +108,7 @@ async function saveGameState({
 }
 
 async function clearGameState() {
-    const { chatMetadata, saveMetadata } = SillyTavern.getContext();
+    const { chatMetadata, saveMetadata } = getContext();
     delete chatMetadata.chess_engine;
     await saveMetadata();
 }
@@ -334,15 +293,12 @@ function getBestMove(game, aiLevel) {
 // Move parsing
 // ─────────────────────────────────────────────────────────────────────────────
 function parseCoordMove(text) {
-    // "X# to X#"
     let m = text.match(/\b([a-h][1-8])\s+to\s+([a-h][1-8])\b/i);
     if (m) return { from: m[1].toLowerCase(), to: m[2].toLowerCase() };
 
-    // "x#-x#"
     m = text.match(/\b([a-h][1-8])-([a-h][1-8])\b/i);
     if (m) return { from: m[1].toLowerCase(), to: m[2].toLowerCase() };
 
-    // "x#x#"
     m = text.match(/(?<![a-z\d])([a-h][1-8])([a-h][1-8])(?![a-z\d])/i);
     if (m) return { from: m[1].toLowerCase(), to: m[2].toLowerCase() };
 
@@ -355,7 +311,7 @@ function applyUserMove(game, text) {
         try {
             const r = game.move({ from: coord.from, to: coord.to, promotion: 'q' });
             if (r) return r;
-        } catch (_) { /* fall through */ }
+        } catch (_) { }
     }
 
     const sanTokens = text.match(
@@ -365,7 +321,7 @@ function applyUserMove(game, text) {
         try {
             const r = game.move(san);
             if (r) return r;
-        } catch (_) { /* try next */ }
+        } catch (_) { }
     }
     return null;
 }
@@ -373,10 +329,6 @@ function applyUserMove(game, text) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Game-over helpers
 // ─────────────────────────────────────────────────────────────────────────────
-/**
- * Determine the game-over reason from a finished chess.js game position.
- * Returns a human-readable string.
- */
 function naturalGameOverReason(game, playerColor) {
     if (game.isCheckmate()) {
         const winner = game.turn() === 'w' ? 'Black' : 'White';
@@ -389,10 +341,6 @@ function naturalGameOverReason(game, playerColor) {
     return 'Game over';
 }
 
-/**
- * Mark the current game as over and persist that fact.
- * Keeps the final board position intact so it can still be rendered.
- */
 async function endGame(reason, game, existingState) {
     const state = existingState ?? getGameState();
     if (!state) return;
@@ -404,7 +352,7 @@ async function endGame(reason, game, existingState) {
         lastMoveBlack:  state.lastMoveBlack ?? null,
         gameOver:       true,
         gameOverReason: reason,
-        narratedEnding: false,   // The interceptor will set this to true after one narration
+        narratedEnding: false,   
     });
     console.log(`[${MODULE_NAME}] Game ended: ${reason}`);
 }
@@ -438,7 +386,6 @@ function renderBoardHtml(game, state, playerColor) {
 
     let html = `<div class="ce-wrapper${isOver ? ' ce-game-over' : ''}" data-fen="${game.fen()}">`;
 
-    // ── status bar ───────────────────────────────────────────────────────────
     html += `<div class="ce-statusbar">`;
     html += `<span class="ce-status">${statusText}</span>`;
     if (state?.lastMoveWhite || state?.lastMoveBlack) {
@@ -451,7 +398,6 @@ function renderBoardHtml(game, state, playerColor) {
     }
     html += `</div>`;
 
-    // ── board ────────────────────────────────────────────────────────────────
     html += `<div class="ce-board">`;
 
     for (const rIdx of rankOrder) {
@@ -487,10 +433,7 @@ function renderBoardHtml(game, state, playerColor) {
     for (const fIdx of fileOrder) {
         html += `<div class="ce-label ce-file-label">${String.fromCharCode(97 + fIdx)}</div>`;
     }
-    html += `</div>`;
-
-    html += `</div>`; // ce-board
-    html += `</div>`; // ce-wrapper
+    html += `</div></div></div>`;
     return html;
 }
 
@@ -529,11 +472,9 @@ async function processUserMessage(messageText) {
 
     const state = getGameState();
 
-    // ── 1. No active game ────────────────────────────────────────────────────
     if (!state) {
         if (!settings.autoDetectMoves) return;
 
-        // Check for the configured trigger phrase to auto-start
         if (matchesTriggerPhrase(messageText)) {
             const game = makeGame();
             await saveGameState({
@@ -546,17 +487,10 @@ async function processUserMessage(messageText) {
             );
             console.log(`[${MODULE_NAME}] Game auto-started via trigger phrase`);
         }
-        // Whether or not a game just started, do NOT process a move in this
-        // same message — the game wasn't active when the message was composed.
         return;
     }
 
-    // ── 2. Game already concluded ────────────────────────────────────────────
-    if (state.gameOver) {
-        // Silently ignore; the user can start a new game with /chess new or
-        // the trigger phrase.  We do NOT spam a toast on every message.
-        return;
-    }
+    if (state.gameOver) return;
 
     if (!settings.autoDetectMoves) return;
 
@@ -566,7 +500,6 @@ async function processUserMessage(messageText) {
     const playerColor = settings.playerColor || 'w';
     if (game.turn() !== playerColor) return;
 
-    // ── 3. User resignation ──────────────────────────────────────────────────
     if (containsUserResignation(messageText)) {
         const reason = playerColor === 'w'
             ? 'White resigned — Black wins'
@@ -576,18 +509,12 @@ async function processUserMessage(messageText) {
         return;
     }
 
-    // ── 4. Apply user's move ─────────────────────────────────────────────────
     const userMoveResult = applyUserMove(game, messageText);
-    if (!userMoveResult) {
-        // No valid move found — leave the game state unchanged and let the
-        // chat message go through normally.
-        return;
-    }
+    if (!userMoveResult) return;
 
     const whiteMoveStr = `${userMoveResult.from}→${userMoveResult.to}`;
     let   blackMoveStr = null;
 
-    // Check if the player's move ended the game
     if (game.isGameOver()) {
         const reason = naturalGameOverReason(game, playerColor);
         toastr.info(`${reason}!`);
@@ -603,7 +530,6 @@ async function processUserMessage(messageText) {
         return;
     }
 
-    // ── 5. Engine response ───────────────────────────────────────────────────
     const aiColor = playerColor === 'w' ? 'b' : 'w';
     if (game.turn() === aiColor) {
         const bestMove = getBestMove(game, settings.aiLevel);
@@ -615,7 +541,6 @@ async function processUserMessage(messageText) {
         }
     }
 
-    // Did the engine's move end the game?
     const engineEndedGame = game.isGameOver();
     const gameOverReason  = engineEndedGame ? naturalGameOverReason(game, playerColor) : '';
 
@@ -625,7 +550,6 @@ async function processUserMessage(messageText) {
         toastr.warning(game.turn() === 'w' ? 'White is in check!' : 'Black is in check!');
     }
 
-    // ── 6. Persist ───────────────────────────────────────────────────────────
     await saveGameState({
         fen:            game.fen(),
         history:        game.history(),
@@ -647,7 +571,6 @@ globalThis.chessEngineInterceptor = async function (chat, contextSize, abort, ty
     const state = getGameState();
     if (!state) return;
 
-    // ── Already narrated the ending → stay silent forever after ─────────────
     if (state.narratedEnding) return;
 
     if (!(await loadChessJs())) return;
@@ -657,7 +580,6 @@ globalThis.chessEngineInterceptor = async function (chat, contextSize, abort, ty
     let boardNote;
 
     if (state.gameOver) {
-        // ── One-time ending narration ────────────────────────────────────────
         const reason  = state.gameOverReason || 'The game has ended';
         const lastW   = state.lastMoveWhite ? `White's last move: ${state.lastMoveWhite.replace('→',' → ')}` : '';
         const lastB   = state.lastMoveBlack ? `Black's last move: ${state.lastMoveBlack.replace('→',' → ')}` : '';
@@ -673,11 +595,9 @@ globalThis.chessEngineInterceptor = async function (chat, contextSize, abort, ty
             `and then continue the story.  Do not start a new game or make up further moves.`,
         ].filter(Boolean).join('\n');
 
-        // Mark as narrated so this block only fires once
         await saveGameState({ ...state, narratedEnding: true });
 
     } else {
-        // ── Normal in-progress injection ─────────────────────────────────────
         const pieces  = { w: [], b: [] };
         for (const row of game.board()) {
             for (const piece of row) {
@@ -729,7 +649,7 @@ globalThis.chessEngineInterceptor = async function (chat, contextSize, abort, ty
 // Event handlers
 // ─────────────────────────────────────────────────────────────────────────────
 async function onMessageSent(messageId) {
-    const { chat } = SillyTavern.getContext();
+    const { chat } = getContext();
 
     let messageText = null;
     if (typeof messageId === 'number' && chat[messageId]) {
@@ -745,14 +665,12 @@ async function onMessageSent(messageId) {
 }
 
 async function onCharacterMessageRendered(messageId) {
-    // 1. Render the board
     await injectBoard(messageId);
 
-    // 2. Check if the character just resigned
     const state = getGameState();
-    if (!state || state.gameOver) return;   // already over, nothing to do
+    if (!state || state.gameOver) return;
 
-    const { chat } = SillyTavern.getContext();
+    const { chat } = getContext();
     const message  = chat[messageId];
     if (!message || message.is_user || message.is_system) return;
 
@@ -764,7 +682,6 @@ async function onCharacterMessageRendered(messageId) {
             : 'White resigned — Black wins';
         toastr.info(`The character resigned! ${reason}.`);
         await endGame(reason, null, state);
-        // Re-render the board so it shows the game-over style
         await injectBoard(messageId);
     }
 }
@@ -774,7 +691,7 @@ async function onChatChanged() {
     if (!state) return;
     if (!(await loadChessJs())) return;
 
-    const { chat } = SillyTavern.getContext();
+    const { chat } = getContext();
     for (let i = chat.length - 1; i >= 0; i--) {
         if (!chat[i].is_user && !chat[i].is_system) {
             setTimeout(() => injectBoard(i), 300);
@@ -793,7 +710,6 @@ async function handleChessCommand(args, sub) {
 
     const settings = getSettings();
 
-    // ── new ─────────────────────────────────────────────────────────────────
     if (cmd === 'new' || cmd === 'reset' || cmd === 'start') {
         const game = makeGame();
         await saveGameState({ fen: game.fen(), history: [], lastMoveWhite: null, lastMoveBlack: null });
@@ -804,17 +720,15 @@ async function handleChessCommand(args, sub) {
         return 'New game started.';
     }
 
-    // ── flip ────────────────────────────────────────────────────────────────
     if (cmd === 'flip') {
         settings.playerColor = settings.playerColor === 'w' ? 'b' : 'w';
-        const { saveSettingsDebounced } = SillyTavern.getContext();
+        const { saveSettingsDebounced } = getContext();
         saveSettingsDebounced();
         updateSettingsUI();
         toastr.info(`You now play ${settings.playerColor === 'w' ? 'White' : 'Black'}.`);
         return `Player color set to ${settings.playerColor === 'w' ? 'White' : 'Black'}.`;
     }
 
-    // ── fen ─────────────────────────────────────────────────────────────────
     if (cmd === 'fen') {
         const state = getGameState();
         if (!state) return 'No active game.';
@@ -822,9 +736,8 @@ async function handleChessCommand(args, sub) {
         return state.fen;
     }
 
-    // ── board ────────────────────────────────────────────────────────────────
     if (cmd === 'board') {
-        const { chat } = SillyTavern.getContext();
+        const { chat } = getContext();
         for (let i = chat.length - 1; i >= 0; i--) {
             if (!chat[i].is_user && !chat[i].is_system) {
                 await injectBoard(i);
@@ -834,7 +747,6 @@ async function handleChessCommand(args, sub) {
         return '';
     }
 
-    // ── resign ───────────────────────────────────────────────────────────────
     if (cmd === 'resign') {
         const state = getGameState();
         if (!state || state.gameOver) {
@@ -850,14 +762,12 @@ async function handleChessCommand(args, sub) {
         return reason;
     }
 
-    // ── stop / end / quit ────────────────────────────────────────────────────
     if (cmd === 'stop' || cmd === 'end' || cmd === 'quit') {
         await clearGameState();
         toastr.info('Chess game ended and cleared.');
         return 'Game cleared.';
     }
 
-    // ── help (default) ───────────────────────────────────────────────────────
     toastr.info(
         '/chess new — start a new game\n' +
         '/chess flip — switch your colour (White ↔ Black)\n' +
@@ -941,16 +851,6 @@ function buildSettingsHtml() {
       <button id="ce_end_game_btn"    class="menu_button">■ Clear Game</button>
     </div>
 
-    <div class="ce-hint">
-      <b>Starting a game:</b> Type your trigger phrase (default: <em>let's play chess</em>)
-      in any message, or use <b>/chess new</b>.<br><br>
-      <b>Making a move:</b> Include the squares in your message:<br>
-      <em>"I move from E2 to E4"</em> &nbsp;·&nbsp; <em>"e2-e4"</em> &nbsp;·&nbsp; <em>"e2e4"</em>
-      &nbsp;·&nbsp; SAN (<em>"e4"</em>, <em>"Nf3"</em>)<br><br>
-      <b>Resigning:</b> Say <em>"I resign"</em> / <em>"I give up"</em> in a message,
-      or use <b>/chess resign</b>.
-    </div>
-
   </div>
 </div>`;
 }
@@ -976,13 +876,12 @@ function updateSettingsUI() {
         else el.value = String(settings[key] ?? '');
     }
 
-    // Grey out the phrase input when phrase-start is disabled
     const triggerRow = $('ce_trigger_row');
     if (triggerRow) triggerRow.style.opacity = settings.triggerPhraseEnabled ? '1' : '0.4';
 }
 
 function attachSettingsListeners() {
-    const { saveSettingsDebounced } = SillyTavern.getContext();
+    const { saveSettingsDebounced } = getContext();
     const settings = getSettings();
 
     const bind = (id, key, transform = v => v) => {
@@ -991,7 +890,7 @@ function attachSettingsListeners() {
         el.addEventListener('change', () => {
             settings[key] = transform(el.type === 'checkbox' ? el.checked : el.value);
             saveSettingsDebounced();
-            updateSettingsUI();  // refresh dependent visibility
+            updateSettingsUI();  
         });
     };
 
@@ -1016,16 +915,14 @@ function attachSettingsListeners() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Extension entry point
 // ─────────────────────────────────────────────────────────────────────────────
-export async function onActivate() {
+jQuery(async () => {
     console.log(`[${MODULE_NAME}] Activating…`);
 
-    loadChessJs();   // pre-load in background
-    getSettings();   // initialise defaults
-
-    const { eventSource, event_types } = SillyTavern.getContext();
+    loadChessJs();   
+    getSettings();   
 
     // ── Settings panel ───────────────────────────────────────────────────────
-    const settingsArea = document.getElementById('extensions_settings2');
+    const settingsArea = document.getElementById('extensions_settings');
     if (settingsArea) {
         const div = document.createElement('div');
         div.innerHTML = buildSettingsHtml();
@@ -1036,8 +933,9 @@ export async function onActivate() {
 
     // ── Slash command ────────────────────────────────────────────────────────
     try {
-        const { SlashCommandParser, SlashCommand, SlashCommandArgument, ARGUMENT_TYPE } =
-            await import('../../../../scripts/slash-commands/SlashCommandParser.js').catch(() => null) ?? {};
+        const { SlashCommandParser } = await import('../../../../slash-commands/SlashCommandParser.js');
+        const { SlashCommand } = await import('../../../../slash-commands/SlashCommand.js');
+        const { SlashCommandArgument, ARGUMENT_TYPE } = await import('../../../../slash-commands/SlashCommandArgument.js');
 
         if (SlashCommandParser && SlashCommand) {
             SlashCommandParser.addCommandObject(SlashCommand.fromProps({
@@ -1046,22 +944,16 @@ export async function onActivate() {
                 callback: async (namedArgs, subcommand) =>
                     handleChessCommand(namedArgs, String(subcommand)),
                 unnamedArgumentList: [
-                    SlashCommandArgument?.fromProps?.({
+                    SlashCommandArgument.fromProps({
                         description: 'new | flip | resign | fen | board | stop',
-                        typeList: [ARGUMENT_TYPE?.STRING ?? 'string'],
+                        typeList: [ARGUMENT_TYPE.STRING],
                         isRequired: false,
                     }),
-                ].filter(Boolean),
+                ],
                 helpString:
                     'Chess Engine — <code>new</code> | <code>flip</code> | ' +
                     '<code>resign</code> | <code>fen</code> | <code>board</code> | <code>stop</code>',
             }));
-        } else {
-            const { registerSlashCommand } =
-                await import('../../../../scripts/slash-commands.js').catch(() => ({}));
-            registerSlashCommand?.('chess',
-                (_, sub) => handleChessCommand({}, sub), ['ch'],
-                'Chess Engine: new|flip|resign|fen|board|stop', true, true);
         }
     } catch (e) {
         console.warn(`[${MODULE_NAME}] Could not register slash command:`, e);
@@ -1077,4 +969,4 @@ export async function onActivate() {
     });
 
     console.log(`[${MODULE_NAME}] Ready. Trigger phrase: "${getSettings().triggerPhrase}"`);
-}
+});

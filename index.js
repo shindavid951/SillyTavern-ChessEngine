@@ -1,5 +1,5 @@
 import { getContext } from '../../../../public/scripts/extensions.js';
-import { eventSource, event_types } from '../../../../pubilc/script.js';
+import { eventSource, event_types } from '../../../../public/script.js';
 
 /**
  * SillyTavern Chess Engine Extension

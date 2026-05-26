@@ -3,7 +3,7 @@
     "loading_order": 10,
     "js": "index.js",
     "css": "style.css",
-    "author": "You",
+    "author": "David Shin",
     "version": "1.0.0",
     "homePage": "https://github.com/your/SillyTavern-ChessEngine",
     "generate_interceptor": "chessEngineInterceptor"

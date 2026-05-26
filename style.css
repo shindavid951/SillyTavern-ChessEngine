@@ -1,0 +1,225 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SillyTavern Chess Engine – style.css
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Board wrapper ─────────────────────────────────────────────────────────── */
+.ce-wrapper {
+    display: inline-block;
+    margin-top: 12px;
+    user-select: none;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+/* ── Status bar ────────────────────────────────────────────────────────────── */
+.ce-statusbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 4px 6px;
+    background: var(--SmartThemeBlurTintColor, rgba(0,0,0,0.35));
+    border-radius: 6px 6px 0 0;
+    font-size: 0.78rem;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.1));
+    border-bottom: none;
+}
+
+.ce-status {
+    font-weight: 600;
+    color: var(--SmartThemeBodyColor, #ddd);
+}
+
+.ce-moves {
+    display: flex;
+    gap: 10px;
+    font-size: 0.73rem;
+    opacity: 0.85;
+}
+
+.ce-move-w {
+    color: #e8d5b7;
+}
+
+.ce-move-b {
+    color: #a0c4ff;
+}
+
+/* ── Board grid ────────────────────────────────────────────────────────────── */
+.ce-board {
+    display: flex;
+    flex-direction: column;
+    border: 2px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.15));
+    border-radius: 0 0 6px 6px;
+    overflow: hidden;
+    width: fit-content;
+}
+
+.ce-row {
+    display: flex;
+    align-items: center;
+}
+
+/* ── Individual squares ────────────────────────────────────────────────────── */
+.ce-cell {
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: background-color 0.15s;
+}
+
+.ce-light {
+    background-color: #f0d9b5;
+}
+
+.ce-dark {
+    background-color: #b58863;
+}
+
+/* Last-move highlights */
+.ce-from {
+    background-color: #cdd16e !important;
+}
+
+.ce-to-w {
+    background-color: #aeca44 !important;
+}
+
+.ce-to-b {
+    background-color: #7eb3d0 !important;
+}
+
+/* ── Pieces ────────────────────────────────────────────────────────────────── */
+.ce-piece {
+    font-size: 28px;
+    line-height: 1;
+    display: block;
+    /* crisp rendering on all platforms */
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+}
+
+.ce-piece-w {
+    color: #fff;
+    text-shadow:
+        0 0 2px #333,
+        0 1px 2px rgba(0,0,0,0.8);
+}
+
+.ce-piece-b {
+    color: #1a1a1a;
+    text-shadow:
+        0 0 2px #888,
+        0 1px 1px rgba(0,0,0,0.3);
+}
+
+/* ── Board labels ──────────────────────────────────────────────────────────── */
+.ce-label {
+    width: 18px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--SmartThemeBodyColor, #ccc);
+    opacity: 0.7;
+    flex-shrink: 0;
+    background: var(--SmartThemeBlurTintColor, rgba(0,0,0,0.25));
+}
+
+.ce-file-row {
+    background: var(--SmartThemeBlurTintColor, rgba(0,0,0,0.25));
+}
+
+.ce-file-label,
+.ce-rank-label {
+    font-size: 0.6rem;
+}
+
+.ce-file-label {
+    width: 42px;
+    height: 16px;
+}
+
+.ce-rank-label {
+    width: 18px;
+}
+
+/* ── Dark theme adaption ───────────────────────────────────────────────────── */
+/* When SillyTavern is in a light theme we soften the board border */
+:root[data-theme="light"] .ce-board,
+:root[data-theme="light"] .ce-statusbar {
+    border-color: rgba(0,0,0,0.2);
+}
+
+/* ── Settings panel ────────────────────────────────────────────────────────── */
+.ce-settings-panel {
+    margin-bottom: 8px;
+}
+
+.ce-row-setting {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.ce-row-setting label {
+    flex-shrink: 0;
+    min-width: 130px;
+    font-size: 0.85rem;
+}
+
+.ce-row-setting select {
+    flex: 1;
+    min-width: 160px;
+}
+
+.ce-btn-row {
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.ce-hint {
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: var(--SmartThemeBlurTintColor, rgba(255,255,255,0.05));
+    border-radius: 6px;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--SmartThemeBodyColor, #ccc);
+    opacity: 0.8;
+}
+
+.ce-hint em {
+    color: var(--SmartThemeQuoteColor, #aef);
+    font-style: normal;
+    font-weight: 600;
+}
+
+/* ── Responsive: shrink on narrow viewports ────────────────────────────────── */
+@media (max-width: 480px) {
+    .ce-cell {
+        width: 34px;
+        height: 34px;
+    }
+
+    .ce-piece {
+        font-size: 22px;
+    }
+
+    .ce-label {
+        width: 14px;
+        height: 34px;
+        font-size: 0.55rem;
+    }
+
+    .ce-file-label {
+        width: 34px;
+    }
+}

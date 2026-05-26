@@ -37,7 +37,7 @@ context and weaves them into the story naturally.
 
 Use *Install extension from URL* and paste:
 ```
-https://github.com/your/SillyTavern-ChessEngine
+https://github.com/shindavid951/SillyTavern-ChessEngine
 ```
 
 > **Requires internet access on first load** — chess.js (~100 KB) is fetched from
